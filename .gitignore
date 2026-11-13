@@ -1,0 +1,4 @@
+build/
+tests/test_modified
+tests/*.ll
+*.so
