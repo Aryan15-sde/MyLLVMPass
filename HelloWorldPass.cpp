@@ -1,5 +1,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instruction.h"
@@ -22,11 +23,19 @@ struct HelloWorldPass : PassInfoMixin<HelloWorldPass> {
     for (BasicBlock &BB : F) {
       for (Instruction &I : BB) {
         if (auto *BinOp = dyn_cast<BinaryOperator>(&I)) {
-          if (BinOp->getOpcode() == Instruction::Add) {
+          if (BinOp->getOpcode() == Instruction::Add &&
+              BinOp->getType()->isIntOrIntVectorTy()) {
             IRBuilder<> Builder(BinOp);
-            Value *NewSub = Builder.CreateSub(
-              BinOp->getOperand(0), BinOp->getOperand(1), "subtmp");
-            BinOp->replaceAllUsesWith(NewSub);
+            Value *A = BinOp->getOperand(0);
+            Value *B = BinOp->getOperand(1);
+
+            Value *XorVal = Builder.CreateXor(A, B, "mba_xor");
+            Value *AndVal = Builder.CreateAnd(A, B, "mba_and");
+            Value *One = ConstantInt::get(A->getType(), 1);
+            Value *ShlVal = Builder.CreateShl(AndVal, One, "mba_shl");
+            Value *ObfuscatedAdd = Builder.CreateAdd(XorVal, ShlVal, "mba_add");
+
+            BinOp->replaceAllUsesWith(ObfuscatedAdd);
             ToErase.push_back(BinOp);
           }
         }
@@ -38,7 +47,7 @@ struct HelloWorldPass : PassInfoMixin<HelloWorldPass> {
     }
 
     if (!ToErase.empty()) {
-      errs() << "Transformed " << ToErase.size()
+      errs() << "Obfuscated " << ToErase.size()
              << " add instruction(s) in function: " << F.getName() << "\n";
       return PreservedAnalyses::none();
     }
